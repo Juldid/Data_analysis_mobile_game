@@ -99,6 +99,76 @@ def RR_by_days(path_to_file_reg, path_to_file_auth, min_date, max_date):
 
 3. По результатам проведенного А/В тестирования проанализированы метрики конверсии в покупку (CR), средний доход на одного пользователя (ARPU) и средний доход на одного платящего пользователя (ARPPU), написана функция проверки гипотез методом bootstrap и получено, что стат значимых раличий анализируемых метрик в контрольной и тестовой группах нет. Поэтому дать однозначный ответ, какое акционное предложение является лучшим с точки зрения финансовых показателей, мы не можем. 
 
+```python
+def get_bootstrap( 
+    data,  # датафрейм с данными по группам 
+    boot_it,  # количество бутстрэп-подвыборок 
+    bootstrap_conf_level,  # уровень значимости
+    metrica=''  # анализируемая метрика, default metrica = CR
+):
+    boot_data = []
+    boot_len = max([len(data.query("testgroup == 'a'")), len(data.query("testgroup == 'b'"))])
+    for i in tqdm(range(boot_it)):  # извлекаем подвыборки
+        samples = data.sample(boot_len, replace=True)
+        if metrica == 'CR' or metrica == '':
+            CR_1 = samples.query("testgroup == 'a'").agg({'user_id': 'count'}).user_id\
+                / samples.query("testgroup == 'a' and revenue != 0").agg({'user_id': 'count'}).user_id
+            CR_2 = samples.query("testgroup == 'b'").agg({'user_id': 'count'}).user_id\
+                / samples.query("testgroup == 'b' and revenue != 0").agg({'user_id': 'count'}).user_id
+            boot_data.append(CR_1 - CR_2)  # CR
+        elif metrica == 'ARPU':
+            ARPU_1 = samples.query("testgroup == 'a'").agg({'revenue': 'sum'}).revenue\
+                / samples.query("testgroup == 'a'").agg({'user_id': 'count'}).user_id
+            ARPU_2 = samples.query("testgroup == 'b'").agg({'revenue': 'sum'}).revenue\
+                / samples.query("testgroup == 'b'").agg({'user_id': 'count'}).user_id
+            boot_data.append(ARPU_1 - ARPU_2)  # ARPU
+        elif metrica == 'ARPPU':
+            ARPPU_1 = samples.query("testgroup == 'a' and revenue != 0").agg({'revenue': 'sum'}).revenue\
+                / samples.query("testgroup == 'a' and revenue != 0").agg({'user_id': 'count'}).user_id
+            ARPPU_2 = samples.query("testgroup == 'b' and revenue != 0").agg({'revenue': 'sum'}).revenue\
+                / samples.query("testgroup == 'b' and revenue != 0").agg({'user_id': 'count'}).user_id
+            boot_data.append(ARPPU_1 - ARPPU_2)  # ARPPU
+        
+    pd_boot_data = pd.DataFrame(boot_data)
+        
+    left_quant = (1 - bootstrap_conf_level) / 2
+
+    right_quant = 1 - (1 - bootstrap_conf_level) / 2
+    quants = pd_boot_data.quantile([left_quant, right_quant])
+        
+    p_1 = norm.cdf(
+        x=0, 
+        loc=np.mean(boot_data), 
+        scale=np.std(boot_data)
+    )
+    p_2 = norm.cdf(
+        x=0, 
+        loc=-np.mean(boot_data), 
+        scale=np.std(boot_data)
+    )
+    p_value = min(p_1, p_2) * 2
+    
+    # Визуализация
+    _, _, bars = plt.hist(pd_boot_data[0], bins=50)
+    for bar in bars:
+        if bar.get_x() <= quants.iloc[0][0] or bar.get_x() >= quants.iloc[1][0]:
+            bar.set_facecolor('red')
+        else: 
+            bar.set_facecolor('grey')
+            bar.set_edgecolor('black')
+    
+    plt.style.use('ggplot')
+    plt.vlines(quants, ymin=0, ymax=50, linestyle='--')
+    plt.xlabel('boot_data')
+    plt.ylabel('frequency')
+    plt.title("Histogram of boot_data")
+    plt.show()
+       
+    return {"boot_data": boot_data, 
+            "quants": quants, 
+            "p_value": p_value}
+```
+
 4. Также мы посмотрели на распределение дохода (revenue) в группах и получили следующие результаты. В контрольной группе мы имеем большую часть покупателей с низкодоходными покупками (revenue < 500) и ряд покупателей с высокодоходными покупкам (revenue > 5000), которые следует отдельно изучить. В тестовой группе показатель дохода распределен более равномерно и варьеруется от 2000 до 4000.
 
 5. Для оценки результатов последнего прошедшего тематического события в игре сначала посмотрим на метрики привлечения. Какое количество постоянно играющих пользователей (игроков) участвовало в тематическом событии? Посмотрим на средний достигаемый уровень игроков в событии (по дням). Можем сравнить с другими ежемесячными событиями, сделав когортный анализ, посчитав достигаемый уровень игроков по дням и построив heatmap. Таким образом, мы можем оценить скорость получения наград игроками (на сколько сложно проходить уровни). Рассчитав DAU (ежедневные активные пользователи) в течение события и MAU (ежемесячные активные пользователи), можем увидеть, как увеличился приток активных пользователей (игроков). Также можно рассчитать количество сессий в день и среднюю длину сессии на одного пользователя (по событиям). Рассмотреть длину игровой сессии бывает полезно, чтобы понаблюдать, какой процент игровых сессий длится менее Х минут, и какое количество сессий длится более Х минут. Т.е. отслеживать, какой процент пользователей играет долгие периоды времени, в сравнении с теми, кто не надолго заходит в игру.
