@@ -14,6 +14,84 @@
 
 </p>
 
+def RR_by_days(path_to_file_reg, path_to_file_auth, min_date, max_date):
+    """
+    Считает метрику Retention Rate пользователей по дням со дня регистрации (в %) и строит тепловую карту.
+            Параметры:
+                    path_to_file_reg (csv): путь к файлу о времени регистрации пользователей. 
+                    Датафрейм имеет структуру:
+                        reg_ts (timestamp) - время регистрации пользователя
+                        uid (int) - ID пользователя
+                        
+                    path_to_file_auth (csv): путь к файлу о времени захода пользователей в игру (авторизации). 
+                    Датафрейм имеет структуру:
+                        auth_ts (timestamp) - время авторизации пользователя
+                        uid (int) - ID пользователя
+                    
+                    min_date (str):  min дата диапазона в формате "Y-m-d" 
+                    max_date (str): max дата диапазона в формате "Y-m-d"
+                    
+            Возвращаемое значение:
+                    heatmap - тепловая карта с метрикой Retention Rate пользователей (в %) по дням со дня регистрации
+    """
+    reg_data = pd.read_csv(filepath_or_buffer=path_to_file_reg, sep=';') 
+    # Считываем файл с временем регистрации пользователей
+    auth_data = pd.read_csv(filepath_or_buffer=path_to_file_auth, sep=';')
+    # Считываем файл с временем авторизации пользователей
+
+    reg_data['reg_ts'] = pd.to_datetime(reg_data['reg_ts'], unit='s')  # Конвертируем  даты из timestamp в datetime 
+    auth_data['auth_ts'] = pd.to_datetime(auth_data['auth_ts'], unit='s')
+    
+    max_date = datetime.strptime(max_date, '%Y-%m-%d')
+    max_date_auth = max_date + timedelta(days=30) 
+    # Добавляем к max_date 30 дней (т.к. когортный анализ делаем на 30 дней со дня регистрации)
+    
+    reg_data = reg_data.query('@min_date <= reg_ts <= @max_date')  # Выбираем нужный период
+    auth_data = auth_data.query('@min_date <= auth_ts <= @max_date_auth')
+
+    
+    data = reg_data.merge(auth_data, how='inner', on='uid')
+    
+    data['reg_ts'] = data.reg_ts.dt.strftime('%Y-%m-%d')  # Скорректируем формат даты 
+    data['auth_ts'] = data.auth_ts.dt.strftime('%Y-%m-%d')
+    data['reg_ts'] = pd.to_datetime(data['reg_ts'])
+    data['auth_ts'] = pd.to_datetime(data['auth_ts'])
+    
+    data['diff'] = data.auth_ts.dt.to_period('D').astype(int) - data.reg_ts.dt.to_period('D').astype(int) 
+    # Посчитаем разницу между датой регистрации и датой авторизации (в днях)
+ 
+    reg_users = data.groupby('reg_ts')\
+        .agg({'uid': 'nunique'})\
+        .reset_index()\
+        .rename(columns={'uid': 'count_reg_users'}) 
+    # Считаем кол-во уникальных зарегистрированных пользователей (по дням)
+    
+    auth_users = data.query('diff != 0')\
+        .groupby(['reg_ts', 'diff'])\
+        .agg({'uid': 'nunique'})\
+        .reset_index()\
+        .rename(columns={'uid': 'count_auth_users'})
+    # Считаем кол-во уникальных авторизованных (зашедших в игру) пользователей (по дням)
+    
+    data_result = reg_users.merge(auth_users, how='left', on='reg_ts')
+    # Объединяем датафреймы
+    
+    data_result['RR'] = (100 * (data_result['count_auth_users'] / data_result['count_reg_users'])).round(2)
+    # Посчитаем Retention Rate (в %) по дням
+    
+    data_result['reg_ts'] = data_result.reg_ts.astype(str)
+    
+    data_result_month = data_result.query('diff <= 30')
+    # Смотрим только первые 30 дней со дня регистрации
+    
+    data_result_pivot = data_result_month.pivot_table(index='reg_ts', columns='diff', values='RR').fillna(0) 
+    # Построим pivot-таблицу
+    
+    plt.subplots(figsize=(20, 10))
+    sns.heatmap(data_result_pivot, annot=True, fmt="g").set(xlabel="Day", ylabel="Reg_date")
+    plt.show()
+    # Построим тепловую карту
+
 2. Работа функции проверена на временном интервале с 01.06.2019 по 30.06.2019. Мы наблюдаем низкий Retention первого дня (D1) < 2% авторизаций пользователей. Возможно это связано с процессом регистрации, авторизации или оплаты пользователями. Потом наблюдаем увеличение RR на протяжении первых 10-14 дней (наше среднее время удержания в игре) со дня регистрации до 8% и плавный спад к концу месяца. Рекомендуется провести анализ причин низкого RR в первые дни после регистрации.
 
 3. По результатам проведенного А/В тестирования проанализированы метрики конверсии в покупку (CR), средний доход на одного пользователя (ARPU) и средний доход на одного платящего пользователя (ARPPU), написана функция проверки гипотез методом bootstrap и получено, что стат значимых раличий анализируемых метрик в контрольной и тестовой группах нет. Поэтому дать однозначный ответ, какое акционное предложение является лучшим с точки зрения финансовых показателей, мы не можем. 
