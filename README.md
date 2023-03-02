@@ -14,27 +14,9 @@
 
 </p>
 
-```
+```python
 def RR_by_days(path_to_file_reg, path_to_file_auth, min_date, max_date):
-    """
-    Считает метрику Retention Rate пользователей по дням со дня регистрации (в %) и строит тепловую карту.
-            Параметры:
-                    path_to_file_reg (csv): путь к файлу о времени регистрации пользователей. 
-                    Датафрейм имеет структуру:
-                        reg_ts (timestamp) - время регистрации пользователя
-                        uid (int) - ID пользователя
-                        
-                    path_to_file_auth (csv): путь к файлу о времени захода пользователей в игру (авторизации). 
-                    Датафрейм имеет структуру:
-                        auth_ts (timestamp) - время авторизации пользователя
-                        uid (int) - ID пользователя
-                    
-                    min_date (str):  min дата диапазона в формате "Y-m-d" 
-                    max_date (str): max дата диапазона в формате "Y-m-d"
-                    
-            Возвращаемое значение:
-                    heatmap - тепловая карта с метрикой Retention Rate пользователей (в %) по дням со дня регистрации
-    """
+
     reg_data = pd.read_csv(filepath_or_buffer=path_to_file_reg, sep=';') 
     # Считываем файл с временем регистрации пользователей
     auth_data = pd.read_csv(filepath_or_buffer=path_to_file_auth, sep=';')
