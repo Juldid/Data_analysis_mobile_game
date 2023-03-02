@@ -10,7 +10,7 @@
 
 <p align="center">
 
-  <img width="560" height="350" src="https://github.com/Juldid/Data_analysis_mobile_game/blob/main/Cohorts.png">
+  <img width="760" height="550" src="https://github.com/Juldid/Data_analysis_mobile_game/blob/main/Cohorts.png">
 
 </p>
 
